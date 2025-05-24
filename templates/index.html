@@ -232,11 +232,45 @@
         const MAX_MESSAGES = 100;
         let lastMessageId = 0;
         let messageHistory = [];
-        
+        const MAX_RETRY_DELAY = 5000; // in ms
+        const FETCH_INTERVAL = 500; // in ms
+
+        let fetchIntervalId;
+
+        function startPolling() {
+            if (fetchIntervalId) {
+                clearInterval(fetchIntervalId);
+            }
+            fetchIntervalId = setInterval(function() {
+                fetchMessages();
+                fetchStats();
+                fetchFiles();
+            }, FETCH_INTERVAL);
+        }
+
+        function fetchWithBackoff(url, options = {}) {
+            return fetch(url, options)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    retryDelay = 500;
+                    return response.json();
+                })
+                .catch(error => {
+                    console.error('Fetch error:', error);
+                    retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY);
+                    console.log(`Retrying in ${retryDelay / 1000} seconds...`);
+                    clearInterval(fetchIntervalId);
+                    setTimeout(() => {
+                        startPolling();
+                    }, retryDelay);
+                    throw error;
+                });
+        }
 
         function fetchMessages() {
-            fetch('/get_messages?last_id=' + lastMessageId)
-            .then(r => r.json())
+            fetchWithBackoff('/get_messages?last_id=' + lastMessageId)
             .then(data => {
                 if (!data.messages.length) return;
                 const box = document.getElementById('messages');
@@ -250,12 +284,13 @@
                 }
                 box.scrollTop = box.scrollHeight;
                 lastMessageId = data.last_id;
+            })
+            .catch(() => {
             });
         }
         
         function fetchStats() {
-            fetch('/get_stats')
-                .then(response => response.json())
+            fetchWithBackoff('/get_stats')
                 .then(data => {
                     document.getElementById('pc').textContent = data.pc;
                     document.getElementById('programLength').textContent = data.program_length;
@@ -282,16 +317,19 @@
                     
                     document.getElementById('largestEntry').textContent = data.largest_entry;
                     document.getElementById('mostAccessedContent').textContent = data.most_accessed_content;
+                })
+                .catch(() => {
                 });
         }
         
         function fetchFiles() {
-            fetch('/get_files')
-                .then(response => response.json())
+            fetchWithBackoff('/get_files')
                 .then(data => {
                     document.getElementById('memoryJson').value = JSON.stringify(data.memory, null, 2);
                     document.getElementById('codeJson').value = JSON.stringify(data.code, null, 2);
                     document.getElementById('vmStateJson').value = JSON.stringify(data.vm_state, null, 2);
+                })
+                .catch(() => {
                 });
         }
         
@@ -311,7 +349,8 @@
                         input.value = '';
                         fetchMessages();
                     }
-                });
+                })
+                .catch(error => console.error('Error sending message:', error));
             }
         }
         
@@ -328,7 +367,8 @@
                     fetchMessages();
                     fetchStats();
                 }
-            });
+            })
+            .catch(error => console.error('Error resetting PC:', error));
         }
         
         function restartVM() {
@@ -344,7 +384,8 @@
                     fetchMessages();
                     fetchStats();
                 }
-            });
+            })
+            .catch(error => console.error('Error restarting VM:', error));
         }
         
         function resetAll() {
@@ -361,12 +402,13 @@
                         fetchMessages();
                         fetchStats();
                     }
-                });
+                })
+                .catch(error => console.error('Error resetting all:', error));
             }
         }
 
         function saveJSON() {
-            if (confirm("you sure there bud?")) {
+            if (confirm("You sure there bud?")) {
                 fetch('/vm_force_save', {
                     method: 'GET',
                     headers: {
@@ -375,18 +417,14 @@
                 })
                 .then(response => {
                     if (response.ok) {
-                        alert("done!")
+                        alert("Done!");
                     }
-                });
+                })
+                .catch(error => console.error('Error force saving JSON:', error));
             }
         }
         
-        // poll for updates every 500ms - very stupid but websockets we're not working for me and I'm lazy af
-        setInterval(function() {
-            fetchMessages();
-            fetchStats();
-            fetchFiles();
-        }, 500);
+        startPolling();
         
         document.getElementById('messageInput').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
