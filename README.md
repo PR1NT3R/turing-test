@@ -1,0 +1,2 @@
+# What is this?
+I was way too bored and was wondering "what would happen if I made randomly generated code, then change random lines of code for another random lines of code, and this is how this project was born.
