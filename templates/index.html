@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Self-Modifying VM Monitor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: rgb(24, 26, 27);
+            color: #e8e6e3;
+        }
+        .creator-section {
+            margin-bottom: 30px;
+            border: 1px solid #3a3e41;
+            border-radius: 5px;
+            padding: 15px;
+        }
+        .creator-name {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #3a3e41;
+        }
+        th {
+            background-color: rgb(31, 34, 35);
+        }
+        .protected {
+            background-color: rgb(17, 66, 0);
+        }
+        button {
+            background-color: #2b2a33;
+            color: #f8f8fb;
+            border: 1.7px outset #8d8d9a;
+            border-radius: 5px;
+            line-height: 1.6;
+            padding: 5px 10px;
+            display: inline-block;
+            font-family: "MS Shell Dlg", sans-serif;
+            font-size: 13.3333px;
+            font-weight: 400;
+            text-align: center;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #52525e;
+        }
+        .delete-button, .remove-feed-button {
+            background-color: #2b2a33;
+            color: #f8f8fb;
+        }
+        .delete-button:hover, .remove-feed-button:hover {
+            animation: fadeInBgRed 0.3s forwards;
+        }
+        @keyframes fadeInBgRed {
+            from {
+                background-color: #2b2a33;
+                border: 1.7px outset #8d8d9a;
+            }
+            to {
+                background-color: #ff5757;
+                border: 1.7px outset #d83131;
+            }
+        }
+        .messages {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #3a3e41;
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: rgb(31, 34, 35);
+        }
+        .input-group {
+            margin: 10px 0;
+        }
+        input[type="text"] {
+            background-color: rgb(31, 34, 35);
+            color: #e8e6e3;
+            border: 1px solid #3a3e41;
+            padding: 5px;
+            width: 300px;
+        }
+        .file-content {
+            width: 100%;
+            max-width: 50ch;
+            height: 100px;
+            background-color: rgb(31, 34, 35);
+            color: #e8e6e3;
+            border: 1px solid #3a3e41;
+            padding: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            overflow-y: auto;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .confirmation-dialog {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgb(31, 34, 35);
+            border: 2px solid #3a3e41;
+            padding: 20px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+        }
+    </style>
+</head>
+<body>
+    <div class="creator-section">
+        <div class="creator-name">Turing Test VM Monitor - a fun experiment cuz I'm bored and I can</div>
+        
+        <div class="messages" id="messages"></div>
+        
+        <div class="input-group">
+            <input type="text" id="messageInput" placeholder="Enter message to VM">
+            <button onclick="sendMessage()">Send Message</button>
+        </div>
+
+        FYI: H - hypervisor (simulation manager), P - program itself, U - user (you/anyone else typing rn), also if you see "hello" it could in 99% be the remnant of the template code when loading the vm, ignore it
+        <br>
+        <br>
+        NOTE: this is randomly generated code on the fly, in hopes of the monkey typewriter problem occuring for a right set of instructions to occur for the program to halt mutations and modify it's own code without mutations
+        <div class="input-group">
+            <button onclick="resetPC()">Reset PC</button>
+            <button onclick="restartVM()">Restart VM</button>
+            <button onclick="resetAll()">Reset Everything</button>
+            <button onclick="saveJSON()">Force save JSON</button>
+        </div>
+        
+        <div class="stats-grid">
+            <div>
+                <h3>VM Statistics</h3>
+                <table>
+                    <tr><th>Metric</th><th>Value</th></tr>
+                    <tr><td>Program Counter</td><td id="pc">0</td></tr>
+                    <tr><td>Program Length</td><td id="programLength">0</td></tr>
+                    <tr><td>Memory Entries</td><td id="memoryEntries">0</td></tr>
+                    <tr><td>Program Runs</td><td id="programRuns">0</td></tr>
+                    <tr><td>Mutations Count</td><td id="mutationsCount">0</td></tr>
+                    <tr><td>Mutations Enabled</td><td id="mutationEnabled">true</td></tr>
+                </table>
+            </div>
+            
+            <div>
+                <h3>Memory Access Stats</h3>
+                <table>
+                    <thead>
+                        <tr><th>Key</th><th>Accesses</th></tr>
+                    </thead>
+                    <tbody id="topAccessed">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="stats-grid">
+            <div>
+                <h3>Memory Modify Stats</h3>
+                <table>
+                    <thead>
+                        <tr><th>Key</th><th>Modifications</th></tr>
+                    </thead>
+                    <tbody id="topModified">
+                    </tbody>
+                </table>
+            </div>
+            
+            <div>
+                <h3>Memory Content</h3>
+                <p><strong>Largest Entry (last 100 chars):</strong></p>
+                <div id="largestEntry" style="font-family: monospace; background: rgb(31, 34, 35); padding: 5px; border: 1px solid #3a3e41;"></div>
+                <p><strong>Most Accessed Entry (first 100 chars):</strong></p>
+                <div id="mostAccessedContent" style="font-family: monospace; background: rgb(31, 34, 35); padding: 5px; border: 1px solid #3a3e41;"></div>
+            </div>
+        </div>
+        
+        <div class="creator-section">
+            <h3>File Contents</h3>
+            <div class="stats-grid">
+                <div>
+                    <h4>memory.json</h4>
+                    <textarea class="file-content" id="memoryJson" readonly></textarea>
+                </div>
+                <div>
+                    <h4>code.json</h4>
+                    <textarea class="file-content" id="codeJson" style="height: 500px;" readonly></textarea>
+                </div>
+            </div>
+            <div style="margin-top: 10px;">
+                <h4>vm_state.json</h4>
+                <textarea class="file-content" id="vmStateJson" readonly style="width: 100%;"></textarea>
+            </div>
+        </div>
+    </div>
+    
+    <div class="overlay" id="overlay"></div>
+    <div class="confirmation-dialog" id="confirmDialog">
+        <p id="confirmMessage">Are you sure?</p>
+        <button onclick="executeAction()">Yes</button>
+        <button onclick="hideConfirmation()">No</button>
+    </div>
+
+    <script>
+        const MAX_MESSAGES = 100;
+        let lastMessageId = 0;
+        let messageHistory = [];
+        
+
+        function fetchMessages() {
+            fetch('/get_messages?last_id=' + lastMessageId)
+            .then(r => r.json())
+            .then(data => {
+                if (!data.messages.length) return;
+                const box = document.getElementById('messages');
+                data.messages.forEach(msg => {
+                const div = document.createElement('div');
+                div.textContent = msg.text;
+                box.appendChild(div);
+                });
+                while (box.childElementCount > MAX_MESSAGES) {
+                box.removeChild(box.firstChild);
+                }
+                box.scrollTop = box.scrollHeight;
+                lastMessageId = data.last_id;
+            });
+        }
+        
+        function fetchStats() {
+            fetch('/get_stats')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('pc').textContent = data.pc;
+                    document.getElementById('programLength').textContent = data.program_length;
+                    document.getElementById('memoryEntries').textContent = data.memory_entries;
+                    document.getElementById('programRuns').textContent = data.program_runs;
+                    document.getElementById('mutationsCount').textContent = data.mutations_count;
+                    document.getElementById('mutationEnabled').textContent = data.mutation_enabled;
+
+                    const topAccessed = document.getElementById('topAccessed');
+                    topAccessed.innerHTML = '';
+                    data.top_accessed.forEach(function(item) {
+                        const row = topAccessed.insertRow();
+                        row.insertCell(0).textContent = item[0];
+                        row.insertCell(1).textContent = item[1];
+                    });
+
+                    const topModified = document.getElementById('topModified');
+                    topModified.innerHTML = '';
+                    data.top_modified.forEach(function(item) {
+                        const row = topModified.insertRow();
+                        row.insertCell(0).textContent = item[0];
+                        row.insertCell(1).textContent = item[1];
+                    });
+                    
+                    document.getElementById('largestEntry').textContent = data.largest_entry;
+                    document.getElementById('mostAccessedContent').textContent = data.most_accessed_content;
+                });
+        }
+        
+        function fetchFiles() {
+            fetch('/get_files')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('memoryJson').value = JSON.stringify(data.memory, null, 2);
+                    document.getElementById('codeJson').value = JSON.stringify(data.code, null, 2);
+                    document.getElementById('vmStateJson').value = JSON.stringify(data.vm_state, null, 2);
+                });
+        }
+        
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value;
+            if (message.trim()) {
+                fetch('/send_message', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({message: message}),
+                })
+                .then(response => {
+                    if (response.ok) {
+                        input.value = '';
+                        fetchMessages();
+                    }
+                });
+            }
+        }
+        
+        function resetPC() {
+            fetch('/vm_action', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({action: 'resetPC'}),
+            })
+            .then(response => {
+                if (response.ok) {
+                    fetchMessages();
+                    fetchStats();
+                }
+            });
+        }
+        
+        function restartVM() {
+            fetch('/vm_action', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({action: 'restartVM'}),
+            })
+            .then(response => {
+                if (response.ok) {
+                    fetchMessages();
+                    fetchStats();
+                }
+            });
+        }
+        
+        function resetAll() {
+            if (confirm('RESET EVERYTHING? This will wipe all code, memory, and state!')) {
+                fetch('/vm_action', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({action: 'resetAll'}),
+                })
+                .then(response => {
+                    if (response.ok) {
+                        fetchMessages();
+                        fetchStats();
+                    }
+                });
+            }
+        }
+
+        function saveJSON() {
+            if (confirm("you sure there bud?")) {
+                fetch('/vm_force_save', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                })
+                .then(response => {
+                    if (response.ok) {
+                        alert("done!")
+                    }
+                });
+            }
+        }
+        
+        // poll for updates every 500ms - very stupid but websockets we're not working for me and I'm lazy af
+        setInterval(function() {
+            fetchMessages();
+            fetchStats();
+            fetchFiles();
+        }, 500);
+        
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
